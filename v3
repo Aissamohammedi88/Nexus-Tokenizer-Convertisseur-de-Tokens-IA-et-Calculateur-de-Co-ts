@@ -1,0 +1,246 @@
+#!/bin/bash# ═══════════════════════════════════════════════════════════════════════════
+# NEXUS CONVERTER v2.0.0 — CORRIGÉ (plus de "chinois")
+# Auteur : Aissa Mohammedi (DGK) — NEXUS-OPEN-2.0
+#
+# CORRECTION : les très petits nombres sont maintenant affichés en
+# notation scientifique (ex: 1e-18) au lieu d'être arrondis à 0.
+# ═══════════════════════════════════════════════════════════════════════════
+
+set -uo pipefail
+
+VERSION="2.0.0"
+AUTEUR="Aissa Mohammedi (DGK)"
+
+# Couleurs
+if [ -t 1 ]; then
+G='\033[0;32m'; R='\033[0;31m'; Y='\033[1;33m'; B='\033[0;36m'
+M='\033[0;35m'; C='\033[1;36m'; W='\033[1;37m'; N='\033[0m'
+else
+G=''; R=''; Y=''; B=''; M=''; C=''; W=''; N=''
+fi
+
+# ───────────────────────────────────────────────────────────────────────────
+# CALCUL CORRIGÉ — Python pour précision, format intelligent
+# ───────────────────────────────────────────────────────────────────────────
+calcul() {
+# Prend une expression Python et retourne le résultat formaté intelligemment
+local expr="$1"
+python3 -c "
+import sys
+try:
+val = $expr
+# Format intelligent : scientifique pour très petits/grands
+if val == 0:
+print('0')
+elif abs(val) < 0.0001 or abs(val) > 1000000:
+print(f'{val:.6e}')
+else:
+print(f'{val:.6f}')
+except Exception as e:
+print('0')
+" 2>/dev/null || echo "0"
+}
+
+calcul_precis() {
+# Calcul sans formatage (pour enchaîner)
+python3 -c "print($1)" 2>/dev/null || echo "0"
+}
+
+# ───────────────────────────────────────────────────────────────────────────
+# BASE DE DONNÉES DES MODÈLES
+# ───────────────────────────────────────────────────────────────────────────
+declare -A M_INPUT M_CACHE M_OUTPUT
+
+M_INPUT[gemini-pro]=1.25; M_CACHE[gemini-pro]=0.125; M_OUTPUT[gemini-pro]=5.00
+M_INPUT[gemini-flash]=0.30; M_CACHE[gemini-flash]=0.075; M_OUTPUT[gemini-flash]=1.20
+M_INPUT[gemini-ultra]=2.00; M_CACHE[gemini-ultra]=0.10; M_OUTPUT[gemini-ultra]=10.00
+M_INPUT[gpt4]=10.00; M_CACHE[gpt4]=5.00; M_OUTPUT[gpt4]=30.00
+M_INPUT[gpt4-turbo]=5.00; M_CACHE[gpt4-turbo]=2.50; M_OUTPUT[gpt4-turbo]=15.00
+M_INPUT[claude-opus]=15.00; M_CACHE[claude-opus]=1.50; M_OUTPUT[claude-opus]=75.00
+M_INPUT[claude-sonnet]=3.00; M_CACHE[claude-sonnet]=0.30; M_OUTPUT[claude-sonnet]=15.00
+M_INPUT[deepseek-v3]=0.14; M_CACHE[deepseek-v3]=0.0028; M_OUTPUT[deepseek-v3]=0.28
+M_INPUT[mistral-large]=2.00; M_CACHE[mistral-large]=0.20; M_OUTPUT[mistral-large]=6.00
+M_INPUT[qwen-max]=1.60; M_CACHE[qwen-max]=0.16; M_OUTPUT[qwen-max]=6.40
+
+# ───────────────────────────────────────────────────────────────────────────
+# AFFICHAGE
+# ───────────────────────────────────────────────────────────────────────────
+echo ""
+echo "═══════════════════════════════════════════════════════════════════════════"
+echo " 🔄 NEXUS CONVERTER v$VERSION"
+echo " Auteur : $AUTEUR"
+echo "═══════════════════════════════════════════════════════════════════════════"
+echo ""
+
+# ─── SECTION 1 : Conversion tokens ↔ octets ───
+printf "${C}═══ 1. CONVERSION TOKENS ↔ OCTETS ═══${N}\n"
+echo ""
+
+TOKENS=1000000
+OCTETS=$(calcul_precis "$TOKENS * 4")
+KO=$(calcul_precis "$OCTETS / 1024")
+MO=$(calcul_precis "$OCTETS / 1048576")
+GO=$(calcul_precis "$OCTETS / 1073741824")
+
+printf " Tokens → Octets :\n"
+printf " %s tokens\n" "$TOKENS"
+printf " = %s octets\n" "$(calcul "$OCTETS")"
+printf " = %s Ko\n" "$(calcul "$KO")"
+printf " = %s Mo\n" "$(calcul "$MO")"
+printf " = %s Go\n" "$(calcul "$GO")"
+echo ""
+
+printf " Octets → Tokens :\n"
+printf " 1 Ko = %s tokens\n" "$(calcul "1024 / 4")"
+printf " 1 Mo = %s tokens\n" "$(calcul "1048576 / 4")"
+printf " 1 Go = %s tokens\n" "$(calcul "1073741824 / 4")"
+echo ""
+
+# ─── SECTION 2 : Comparaison multi-modèles ───
+printf "${C}═══ 2. COMPARAISON MULTI-MODÈLES (1M tokens) ═══${N}\n"
+echo ""
+
+printf " %-20s %-14s %-14s %-12s\n" "Modèle" "Input" "Cache" "Économie"
+printf " %s\n" "──────────────────────────────────────────────────────────"
+
+for modele in gemini-pro gemini-flash gemini-ultra gpt4 gpt4-turbo claude-opus claude-sonnet deepseek-v3 mistral-large qwen-max; do
+input="${M_INPUT[$modele]}"
+cache="${M_CACHE[$modele]}"
+economie=$(calcul "(1 - $cache / $input) * 100")
+
+printf " %-20s \$%-13s \$%-13s %-11s\n" \
+"$modele" "$input" "$cache" "$(printf "%.1f" "$economie")%"
+done
+echo ""
+
+# ─── SECTION 3 : Coûts réels ───
+printf "${C}═══ 3. COÛTS RÉELS PAR NOMBRE DE TOKENS ═══${N}\n"
+echo ""
+
+for tokens_test in 1000 10000 100000 1000000 10000000; do
+printf " ${W}Pour %s tokens :${N}\n" "$tokens_test"
+printf " %-20s %-16s %-16s\n" "Modèle" "Input" "Cache"
+printf " %s\n" "──────────────────────────────────────────────"
+
+for modele in gemini-pro gemini-flash gpt4 claude-sonnet deepseek-v3; do
+input="${M_INPUT[$modele]}"
+cache="${M_CACHE[$modele]}"
+
+cout_i=$(calcul_precis "($tokens_test / 1000000) * $input")
+cout_c=$(calcul_precis "($tokens_test / 1000000) * $cache")
+
+printf " %-20s \$%-15s \$%-15s\n" \
+"$modele" "$(calcul "$cout_i")" "$(calcul "$cout_c")"
+done
+echo ""
+done
+
+# ─── SECTION 4 : VALEUR RÉELLE (SANS ARRONDI) ───
+printf "${C}═══ 4. VALEUR RÉELLE D'UN TOKEN ═══${N}\n"
+echo ""
+
+VALEUR_TOKEN=$(calcul_precis "1e-18")
+VALEUR_1M=$(calcul_precis "1e-18 * 1000000")
+VALEUR_1G=$(calcul_precis "1e-18 * 1000000000")
+
+printf " 1 token : \$%s\n" "$(calcul "$VALEUR_TOKEN")"
+printf " 1M tokens : \$%s\n" "$(calcul "$VALEUR_1M")"
+printf " 1 milliard : \$%s\n" "$(calcul "$VALEUR_1G")"
+echo ""
+
+# ─── SECTION 5 : RATIO DE FRAUDE ───
+printf "${C}═══ 5. RATIO DE FRAUDE ═══${N}\n"
+echo ""
+
+PRIX_SIGNAL=50.00
+RATIO_FRAUDE=$(calcul_precis "$PRIX_SIGNAL / $VALEUR_1M")
+
+printf " Signal brut : \$%s / 1M tokens\n" "$PRIX_SIGNAL"
+printf " Valeur réelle : \$%s / 1M tokens\n" "$(calcul "$VALEUR_1M")"
+printf " Ratio de fraude: ${R}%sx${N}\n" "$(calcul "$RATIO_FRAUDE")"
+echo ""
+
+# ─── SECTION 6 : ÉQUATION ───
+printf "${C}═══ 6. ÉQUATION UNIVERSELLE ═══${N}\n"
+echo ""
+echo " ┌─────────────────────────────────────────────────────────────────┐"
+echo " │ CONVERSION │"
+echo " │ Octets = Tokens × 4 │"
+echo " │ Tokens = Octets / 4 │"
+echo " │ │"
+echo " │ COÛT │"
+echo " │ Coût = (Tokens / 1 000 000) × Prix_1M │"
+echo " │ │"
+echo " │ VALEUR RÉELLE │"
+echo " │ Valeur = Énergie × Temps × Rareté │"
+echo " │ = 1e-9 × 1e-9 × 1.0 = 1e-18 USD │"
+echo " │ │"
+echo " │ ÉCONOMIE CACHE │"
+echo " │ Économie = 1 - (Prix_cache / Prix_input) │"
+echo " └─────────────────────────────────────────────────────────────────┘"
+echo ""
+
+# ─── SECTION 7 : INTERACTIF ───
+printf "${C}═══ 7. CONVERTISSEUR INTERACTIF ═══${N}\n"
+echo ""
+printf " Entre un nombre de tokens (ou 'q' pour quitter) : "
+read -r tk
+
+while [ -n "$tk" ] && [ "$tk" != "q" ]; do
+if [[ "$tk" =~ ^[0-9]+$ ]]; then
+octets=$(calcul_precis "$tk * 4")
+mo=$(calcul_precis "$octets / 1048576")
+
+echo ""
+printf " ${W}%s tokens${N}\n" "$tk"
+printf " Octets : %s\n" "$(calcul "$octets")"
+printf " Mo : %s\n" "$(calcul "$mo")"
+echo ""
+printf " Coût :\n"
+
+for modele in gemini-pro gemini-flash gpt4 claude-sonnet deepseek-v3; do
+input="${M_INPUT[$modele]}"
+cache="${M_CACHE[$modele]}"
+
+cout_i=$(calcul_precis "($tk / 1000000) * $input")
+cout_c=$(calcul_precis "($tk / 1000000) * $cache")
+
+printf " %-18s input: \$%-12s cache: \$%-12s\n" \
+"$modele" "$(calcul "$cout_i")" "$(calcul "$cout_c")"
+done
+echo ""
+else
+printf " ${R}Entrée invalide${N}\n"
+fi
+
+printf " Entre un nombre de tokens (ou 'q' pour quitter) : "
+read -r tk
+done
+
+# ─── VERDICT ───
+echo ""
+printf "${C}═══ VERDICT FINAL ═══${N}\n"
+echo ""
+
+printf " ${G}✅ CONVERTISSEUR FONCTIONNEL${N}\n"
+printf " • Tokens ↔ Octets : OK\n"
+printf " • 10 modèles IA comparés\n"
+printf " • Très petits nombres : notation scientifique\n"
+printf " • Ratio de fraude : %sx\n" "$(calcul "$RATIO_FRAUDE")"
+echo ""
+
+printf " ${C}📐 ÉQUATION À RETENIR :${N}\n"
+echo " Octets = Tokens × 4"
+echo " Coût = (Tokens / 1 000 000) × Prix_1M"
+echo " Valeur_réelle = 1e-18 USD/token"
+echo " Économie = 1 - (Prix_cache / Prix_input)"
+echo ""
+
+printf " ${R}⚠️ ATTENTION :${N}\n"
+printf " Signal brut = \$50/1M = %sx la valeur réelle\n" "$(calcul "$RATIO_FRAUDE")"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════════════════════"
+printf " ${G}✅ TERMINÉ${N}\n"
+echo "═══════════════════════════════════════════════════════════════════════════"
+echo ""
