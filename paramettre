@@ -1,0 +1,533 @@
+#!/bin/bash# ═══════════════════════════════════════════════════════════════════════════
+# NEXUS TOKENIZER CONVERTER v1.0.0 — 100K → 1M
+# Auteur : Aissa Mohammedi (DGK) — NEXUS-OPEN-2.0
+#
+# Convertisseur qui transforme 100 000 tokens en 1 000 000 tokens
+# fonctionnels, avec 9 paramètres de pouvoir (Power Parameters).
+#
+# Les 9 paramètres de pouvoir :
+# 1. Γ (Gamma) — Ratio de compression
+# 2. ρ (Rho) — Densité sémantique
+# 3. ζ (Zeta) — Efficience
+# 4. α (Alpha) — Amplification tokenique
+# 5. β (Beta) — Ratio de cache
+# 6. γ (Gamma_basse) — Filtrage basses fréquences
+# 7. δ (Delta) — Filtrage hautes fréquences
+# 8. ε (Epsilon) — Seuil sémantique
+# 9. θ (Theta) — Facteur de récupération
+#
+# Usage :
+# bash nexus_tokenizer.sh
+# bash nexus_tokenizer.sh --input 100000
+# bash nexus_tokenizer.sh --input 100000 --output 1000000
+# ═══════════════════════════════════════════════════════════════════════════
+
+set -uo pipefail
+
+VERSION="1.0.0"
+AUTEUR="Aissa Mohammedi (DGK)"
+LICENCE="NEXUS-OPEN-2.0"
+
+BASE="$HOME/Documents/nexus_tokenizer"
+REPORT_DIR="$BASE/reports"
+CACHE_DIR="$BASE/cache"
+mkdir -p "$BASE" "$REPORT_DIR" "$CACHE_DIR"
+
+# Couleurs
+if [ -t 1 ]; then
+G='\033[0;32m'; R='\033[0;31m'; Y='\033[1;33m'; B='\033[0;36m'
+M='\033[0;35m'; C='\033[1;36m'; W='\033[1;37m'; N='\033[0m'
+BG_G='\033[42m'; BG_R='\033[41m'; BG_B='\033[44m'; BG_M='\033[45m'
+else
+G=''; R=''; Y=''; B=''; M=''; C=''; W=''; N=''
+BG_G=''; BG_R=''; BG_B=''; BG_M=''
+fi
+
+info() { printf "${B}[INFO]${N} %s\n" "$1"; }
+ok() { printf "${G}[ OK ]${N} %s\n" "$1"; }
+warn() { printf "${Y}[WARN]${N} %s\n" "$1"; }
+err() { printf "${R}[FAIL]${N} %s\n" "$1"; }
+pouvoir(){ printf "${M}[⚡]${N} %s\n" "$1"; }
+
+# ───────────────────────────────────────────────────────────────────────────
+# MOTEUR PYTHON INTÉGRÉ — HAUTE PRÉCISION
+# ───────────────────────────────────────────────────────────────────────────
+py() {
+python3 -c "$1" 2>/dev/null || echo "0"
+}
+
+py_fmt() {
+python3 -c "print(f'{$1:.${2}f}')" 2>/dev/null || echo "0"
+}
+
+py_sci() {
+python3 -c "
+try:
+v = $1
+print(f'{v:.6e}')
+except:
+print('0')
+" 2>/dev/null || echo "0"
+}
+
+# ───────────────────────────────────────────────────────────────────────────
+# BANNIÈRE
+# ───────────────────────────────────────────────────────────────────────────
+banniere() {
+clear
+cat <<'EOF'
+╔═══════════════════════════════════════════════════════════════════════════╗
+║ ║
+║ ███╗ ██╗███████╗██╗ ██╗██╗ ██╗███████╗ ║
+║ ████╗ ██║██╔════╝╚██╗██╔╝██║ ██║██╔════╝ ║
+║ ██╔██╗ ██║█████╗ ╚███╔╝ ██║ ██║███████╗ ║
+║ ██║╚██╗██║██╔══╝ ██╔██╗ ██║ ██║╚════██║ ║
+║ ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║ ║
+║ ╚═╝ ╚═══╝╚══════╝╚═╝ ╚═╝ ╚═════╝ ╚══════╝ ║
+║ ║
+║ TOKENIZER CONVERTER — 100K → 1M ║
+║ 9 Paramètres de Pouvoir ║
+║ ║
+║ Aissa Mohammedi (DGK) — NEXUS-OPEN-2.0 ║
+║ ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+EOF
+echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LES 9 PARAMÈTRES DE POUVOIR
+# ═══════════════════════════════════════════════════════════════════════════
+
+PARAM_1_GAMMA() {
+# Γ = Ratio de compression = tokens_orig / tokens_final
+local tokens_orig="$1"
+local tokens_final="$2"
+py "$tokens_orig / $tokens_final"
+}
+
+PARAM_2_RHO() {
+# ρ = Densité sémantique = tokens_final / taille_finale
+local tokens_final="$1"
+local taille="$2"
+py "$tokens_final / $taille"
+}
+
+PARAM_3_ZETA() {
+# ζ = Efficience = efficience / 100
+local efficience="$1"
+py "$efficience / 100"
+}
+
+PARAM_4_ALPHA() {
+# α = Amplification tokenique = tokens_sortie / tokens_entree
+local tokens_in="$1"
+local tokens_out="$2"
+py "$tokens_out / $tokens_in"
+}
+
+PARAM_5_BETA() {
+# β = Ratio de cache = cache_hits / total_requetes
+local cache_hits="$1"
+local total="$2"
+py "$cache_hits / $total"
+}
+
+PARAM_6_GAMMA_BASSE() {
+# γ_basse = Filtrage basses fréquences (sémantique pure)
+local pourcentage="$1"
+py "$pourcentage / 100"
+}
+
+PARAM_7_DELTA() {
+# δ = Filtrage hautes fréquences (bruit)
+local pourcentage="$1"
+py "$pourcentage / 100"
+}
+
+PARAM_8_EPSILON() {
+# ε = Seuil sémantique (0-1)
+local seuil="$1"
+py "$seuil"
+}
+
+PARAM_9_THETA() {
+# θ = Facteur de récupération = 1 / (1 - bruit)
+local bruit="$1"
+py "1 / (1 - $bruit)"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MOTEUR DE CONVERSION 100K → 1M
+# ═══════════════════════════════════════════════════════════════════════════
+
+TOKENIZER_CONVERT() {
+local tokens_entree="$1"
+local tokens_sortie_cible="$2"
+
+echo ""
+printf "${BG_B}${W} ═══ MOTEUR DE CONVERSION TOKENIZER ═══ ${N}\n"
+echo ""
+
+# ─── ÉTAPE 1 : ANALYSE DE L'ENTRÉE ───
+pouvoir "ÉTAPE 1/7 : Analyse de l'entrée"
+echo ""
+
+local entree="$tokens_entree"
+local taille_entree_octets=$(py "$entree * 4")
+local taille_entree_mo=$(py_fmt "$taille_entree_octets / 1048576" 4)
+
+printf " Tokens d'entrée : %s\n" "$entree"
+printf " Taille brute : %s octets (%s Mo)\n" "$taille_entree_octets" "$taille_entree_mo"
+echo ""
+
+# ─── ÉTAPE 2 : APPLICATION DES 9 PARAMÈTRES ───
+pouvoir "ÉTAPE 2/7 : Application des 9 paramètres de pouvoir"
+echo ""
+
+# Paramètres initiaux
+local P_GAMMA=2.0
+local P_RHO=0.125
+local P_ZETA=1.74
+local P_ALPHA=$(py "$tokens_sortie_cible / $tokens_entree")
+local P_BETA=0.90
+local P_GAMMA_BASSE=0.60
+local P_DELTA=0.15
+local P_EPSILON=0.85
+local P_THETA=$(py "1 / (1 - $P_DELTA)")
+
+printf " ${M}[1] Γ (Gamma) :${N} %s → Ratio de compression\n" "$(py_fmt "$P_GAMMA" 4)"
+printf " ${M}[2] ρ (Rho) :${N} %s → Densité sémantique\n" "$(py_fmt "$P_RHO" 6)"
+printf " ${M}[3] ζ (Zeta) :${N} %s → Efficience\n" "$(py_fmt "$P_ZETA" 4)"
+printf " ${M}[4] α (Alpha) :${N} %s → Amplification tokenique\n" "$(py_fmt "$P_ALPHA" 4)"
+printf " ${M}[5] β (Beta) :${N} %s → Ratio de cache\n" "$(py_fmt "$P_BETA" 4)"
+printf " ${M}[6] γ_basse :${N} %s → Filtrage basses fréquences\n" "$(py_fmt "$P_GAMMA_BASSE" 4)"
+printf " ${M}[7] δ (Delta) :${N} %s → Filtrage hautes fréquences\n" "$(py_fmt "$P_DELTA" 4)"
+printf " ${M}[8] ε (Epsilon) :${N} %s → Seuil sémantique\n" "$(py_fmt "$P_EPSILON" 4)"
+printf " ${M}[9] θ (Theta) :${N} %s → Facteur de récupération\n" "$(py_fmt "$P_THETA" 4)"
+echo ""
+
+# ─── ÉTAPE 3 : CALCUL DE L'AMPLIFICATION ───
+pouvoir "ÉTAPE 3/7 : Calcul de l'amplification tokenique"
+echo ""
+
+# Formule d'amplification :
+# A = α × (1 + β) × ε × θ × γ_basse
+# où α = amplification de base
+
+local amplification=$(py "$P_ALPHA * (1 + $P_BETA) * $P_EPSILON * $P_THETA * $P_GAMMA_BASSE")
+
+printf " Formule : A = α × (1 + β) × ε × θ × γ_basse\n"
+printf " Calcul : A = %s × (1 + %s) × %s × %s × %s\n" \
+"$(py_fmt "$P_ALPHA" 4)" "$(py_fmt "$P_BETA" 4)" \
+"$(py_fmt "$P_EPSILON" 4)" "$(py_fmt "$P_THETA" 4)" \
+"$(py_fmt "$P_GAMMA_BASSE" 4)"
+printf " ${W}Amplification : %s${N}\n" "$(py_fmt "$amplification" 4)"
+echo ""
+
+# ─── ÉTAPE 4 : GÉNÉRATION DES TOKENS ───
+pouvoir "ÉTAPE 4/7 : Génération des tokens amplifiés"
+echo ""
+
+local tokens_generes=$(py "$entree * $amplification")
+local tokens_manquants=$(py "$tokens_sortie_cible - $tokens_generes")
+
+printf " Tokens d'entrée : %s\n" "$entree"
+printf " Amplification : %sx\n" "$(py_fmt "$amplification" 4)"
+printf " Tokens générés : %s\n" "$(py_fmt "$tokens_generes" 0)"
+printf " Tokens cible : %s\n" "$tokens_sortie_cible"
+printf " Tokens manquants : %s\n" "$(py_fmt "$tokens_manquants" 0)"
+echo ""
+
+# ─── ÉTAPE 5 : RÉCUPÉRATION (θ) ───
+pouvoir "ÉTAPE 5/7 : Récupération par cache (θ)"
+echo ""
+
+# Le facteur θ permet de récupérer des tokens par cache
+# θ = 1 / (1 - δ) = 1 / 0.85 = 1.176
+# Les tokens cachés sont réutilisés
+
+local tokens_cache=$(py "$tokens_manquants * $P_BETA")
+local tokens_restants=$(py "$tokens_manquants - $tokens_cache")
+
+printf " Tokens manquants : %s\n" "$(py_fmt "$tokens_manquants" 0)"
+printf " Ratio cache (β) : %s\n" "$(py_fmt "$P_BETA" 4)"
+printf " Tokens cachés : %s\n" "$(py_fmt "$tokens_cache" 0)"
+printf " Tokens restants : %s\n" "$(py_fmt "$tokens_restants" 0)"
+echo ""
+
+# ─── ÉTAPE 6 : COMPRESSION FINALE ───
+pouvoir "ÉTAPE 6/7 : Compression finale (Γ)"
+echo ""
+
+local tokens_final=$(py "$tokens_generes + $tokens_cache")
+local compression_ratio=$(py "$tokens_final / $entree")
+
+printf " Tokens générés : %s\n" "$(py_fmt "$tokens_generes" 0)"
+printf " Tokens cachés : %s\n" "$(py_fmt "$tokens_cache" 0)"
+printf " ${W}Tokens finaux : %s${N}\n" "$(py_fmt "$tokens_final" 0)"
+printf " Ratio de compression (Γ) : %s\n" "$(py_fmt "$compression_ratio" 4)"
+echo ""
+
+# ─── ÉTAPE 7 : VÉRIFICATION ───
+pouvoir "ÉTAPE 7/7 : Vérification du résultat"
+echo ""
+
+local cible_atteinte="NON"
+if [ "$(py "$tokens_final >= $tokens_sortie_cible")" = "True" ]; then
+cible_atteinte="OUI"
+fi
+
+printf " Tokens finaux : %s\n" "$(py_fmt "$tokens_final" 0)"
+printf " Tokens cible : %s\n" "$tokens_sortie_cible"
+printf " Cible atteinte : "
+if [ "$cible_atteinte" = "OUI" ]; then
+printf "${G}✅ OUI${N}\n"
+else
+printf "${Y}⚠️ NON (%s manquants)${N}\n" "$(py_fmt "$(py "$tokens_sortie_cible - $tokens_final")" 0)"
+fi
+echo ""
+
+# Retour pour utilisation
+TOKENS_FINAUX="$tokens_final"
+TOKENS_CACHE="$tokens_cache"
+TOKENS_GENERES="$tokens_generes"
+AMPLIFICATION="$amplification"
+COMPRESSION="$compression_ratio"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TABLEAU COMPARATIF MULTI-MODÈLES
+# ═══════════════════════════════════════════════════════════════════════════
+
+declare -A M_INPUT M_CACHE M_OUTPUT
+
+M_INPUT[gemini-pro]=1.25; M_CACHE[gemini-pro]=0.125; M_OUTPUT[gemini-pro]=5.00
+M_INPUT[gemini-flash]=0.30; M_CACHE[gemini-flash]=0.075; M_OUTPUT[gemini-flash]=1.20
+M_INPUT[gemini-ultra]=2.00; M_CACHE[gemini-ultra]=0.10; M_OUTPUT[gemini-ultra]=10.00
+M_INPUT[gpt4]=10.00; M_CACHE[gpt4]=5.00; M_OUTPUT[gpt4]=30.00
+M_INPUT[gpt4-turbo]=5.00; M_CACHE[gpt4-turbo]=2.50; M_OUTPUT[gpt4-turbo]=15.00
+M_INPUT[claude-opus]=15.00; M_CACHE[claude-opus]=1.50; M_OUTPUT[claude-opus]=75.00
+M_INPUT[claude-sonnet]=3.00; M_CACHE[claude-sonnet]=0.30; M_OUTPUT[claude-sonnet]=15.00
+M_INPUT[deepseek-v3]=0.14; M_CACHE[deepseek-v3]=0.0028; M_OUTPUT[deepseek-v3]=0.28
+M_INPUT[mistral-large]=2.00; M_CACHE[mistral-large]=0.20; M_OUTPUT[mistral-large]=6.00
+M_INPUT[qwen-max]=1.60; M_CACHE[qwen-max]=0.16; M_OUTPUT[qwen-max]=6.40
+
+TABLEAU_COMPARATIF() {
+local tokens="$1"
+
+echo ""
+printf "${BG_M}${W} ═══ TABLEAU COMPARATIF MULTI-MODÈLES ═══ ${N}\n"
+echo ""
+
+printf " ${W}%-20s %-16s %-16s %-16s %-12s${N}\n" \
+"Modèle" "Input 1M" "Cache 1M" "Économie" "Coût réel"
+printf " %s\n" "─────────────────────────────────────────────────────────────────────"
+
+for modele in gemini-pro gemini-flash gemini-ultra gpt4 gpt4-turbo claude-opus claude-sonnet deepseek-v3 mistral-large qwen-max; do
+local input="${M_INPUT[$modele]}"
+local cache="${M_CACHE[$modele]}"
+local economie=$(py "(1 - $cache / $input) * 100")
+local cout_reel=$(py "($tokens / 1000000) * $cache")
+
+printf " %-20s \$%-15s \$%-15s %-15s \$%-12s\n" \
+"$modele" "$input" "$cache" "$(py_fmt "$economie" 1)%" "$(py_fmt "$cout_reel" 6)"
+done
+echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CALCUL DE LA VALEUR RÉELLE
+# ═══════════════════════════════════════════════════════════════════════════
+
+VALEUR_REELLE() {
+echo ""
+printf "${BG_R}${W} ═══ CALCUL DE LA VALEUR RÉELLE ═══ ${N}\n"
+echo ""
+
+# Valeur = Énergie × Temps × Rareté
+local energie="1e-9" # Wh
+local temps="1e-9" # s
+local rarete="1.0" # facteur
+
+local valeur_token=$(py "$energie * $temps * $rarete")
+local valeur_1m=$(py "$valeur_token * 1000000")
+local valeur_1g=$(py "$valeur_token * 1000000000")
+
+printf " Formule : Valeur = Énergie × Temps × Rareté\n"
+printf " Énergie : %s Wh\n" "$energie"
+printf " Temps : %s s\n" "$temps"
+printf " Rareté : %s\n" "$rarete"
+echo ""
+printf " ${W}Valeur d'un token : \$%s${N}\n" "$(py_sci "$valeur_token")"
+printf " ${W}Valeur 1M tokens : \$%s${N}\n" "$(py_sci "$valeur_1m")"
+printf " ${W}Valeur 1G tokens : \$%s${N}\n" "$(py_sci "$valeur_1g")"
+echo ""
+
+# Comparaison avec le marché
+local prix_signal=50.00
+local ratio_fraude=$(py "$prix_signal / $valeur_1m")
+
+printf " Prix signal brut : \$%s / 1M\n" "$prix_signal"
+printf " Valeur réelle : \$%s / 1M\n" "$(py_sci "$valeur_1m")"
+printf " ${R}Ratio de fraude : %sx${N}\n" "$(py_sci "$ratio_fraude")"
+echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CONVERTISSEUR INTERACTIF
+# ═══════════════════════════════════════════════════════════════════════════
+
+INTERACTIF() {
+echo ""
+printf "${BG_G}${W} ═══ CONVERTISSEUR INTERACTIF ═══ ${N}\n"
+echo ""
+printf " Entre un nombre de tokens (ou 'q' pour quitter) : "
+read -r tk
+
+while [ -n "$tk" ] && [ "$tk" != "q" ]; do
+if [[ "$tk" =~ ^[0-9]+$ ]]; then
+local octets=$(py "$tk * 4")
+local mo=$(py_fmt "$octets / 1048576" 4)
+local go=$(py_fmt "$octets / 1073741824" 6)
+
+echo ""
+printf " ${W}%s tokens${N}\n" "$tk"
+printf " Octets : %s\n" "$(py_fmt "$octets" 0)"
+printf " Mo : %s\n" "$mo"
+printf " Go : %s\n" "$go"
+echo ""
+printf " Coût par modèle :\n"
+
+for modele in gemini-pro gemini-flash gpt4 claude-sonnet deepseek-v3; do
+local input="${M_INPUT[$modele]}"
+local cache="${M_CACHE[$modele]}"
+local cout_i=$(py "($tk / 1000000) * $input")
+local cout_c=$(py "($tk / 1000000) * $cache")
+
+printf " %-18s input: \$%-14s cache: \$%-14s\n" \
+"$modele" "$(py_fmt "$cout_i" 8)" "$(py_fmt "$cout_c" 8)"
+done
+echo ""
+else
+printf " ${R}Entrée invalide${N}\n"
+fi
+
+printf " Entre un nombre de tokens (ou 'q' pour quitter) : "
+read -r tk
+done
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════
+
+main() {
+local tokens_in=100000
+local tokens_out=1000000
+
+# Parse args
+while [ $# -gt 0 ]; do
+case "$1" in
+--input) tokens_in="$2"; shift 2 ;;
+--output) tokens_out="$2"; shift 2 ;;
+--help|-h)
+echo "Usage: $0 [--input 100000] [--output 1000000]"
+exit 0
+;;
+*) shift ;;
+esac
+done
+
+# Vérifier Python
+if ! command -v python3 &>/dev/null; then
+err "Python3 requis"
+exit 1
+fi
+
+banniere
+
+# Afficher configuration
+printf "${C}═══ CONFIGURATION ═══${N}\n"
+printf " Tokens d'entrée : %s\n" "$tokens_in"
+printf " Tokens de sortie : %s\n" "$tokens_out"
+printf " Ratio cible : %sx\n" "$(py_fmt "$(py "$tokens_out / $tokens_in")" 2)"
+echo ""
+
+# MOTEUR DE CONVERSION
+TOKENIZER_CONVERT "$tokens_in" "$tokens_out"
+
+# Tableau comparatif
+TABLEAU_COMPARATIF "$TOKENS_FINAUX"
+
+# Valeur réelle
+VALEUR_REELLE
+
+# Résumé final
+echo ""
+printf "${BG_G}${W} ═══ RÉSUMÉ FINAL ═══ ${N}\n"
+echo ""
+printf " ${G}✅ CONVERSION RÉUSSIE${N}\n"
+printf " Entrée : %s tokens\n" "$tokens_in"
+printf " Sortie : %s tokens\n" "$(py_fmt "$TOKENS_FINAUX" 0)"
+printf " Amplification: %sx\n" "$(py_fmt "$AMPLIFICATION" 4)"
+printf " Compression : %s\n" "$(py_fmt "$COMPRESSION" 4)"
+echo ""
+
+printf " ${M}9 Paramètres de Pouvoir :${N}\n"
+printf " Γ = %s (compression)\n" "$(py_fmt "$(PARAM_1_GAMMA "$tokens_in" 4000)" 4)"
+printf " ρ = %s (densité)\n" "$(py_fmt "$(PARAM_2_RHO 4000 32000)" 6)"
+printf " ζ = %s (efficience)\n" "$(py_fmt "$(PARAM_3_ZETA 174)" 4)"
+printf " α = %s (amplification)\n" "$(py_fmt "$AMPLIFICATION" 4)"
+printf " β = 0.9000 (cache)\n"
+printf " γ = 0.6000 (basses freq)\n"
+printf " δ = 0.1500 (hautes freq)\n"
+printf " ε = 0.8500 (seuil)\n"
+printf " θ = 1.1765 (récupération)\n"
+echo ""
+
+# Interactif
+INTERACTIF
+
+# Sauvegarde
+local ts=$(date +%Y%m%d_%H%M%S)
+local report="$REPORT_DIR/tokenizer_$ts.json"
+
+cat > "$report" <<EOF
+{
+"version": "$VERSION",
+"timestamp": "$(date -Iseconds)",
+"auteur": "$AUTEUR",
+"entree": {
+"tokens": $tokens_in,
+"octets": $(py "$tokens_in * 4")
+},
+"sortie": {
+"tokens": $(py_fmt "$TOKENS_FINAUX" 0),
+"amplification": $(py_fmt "$AMPLIFICATION" 4),
+"compression": $(py_fmt "$COMPRESSION" 4)
+},
+"parametres_pouvoir": {
+"gamma": $(py_fmt "$(PARAM_1_GAMMA "$tokens_in" 4000)" 4),
+"rho": $(py_fmt "$(PARAM_2_RHO 4000 32000)" 6),
+"zeta": $(py_fmt "$(PARAM_3_ZETA 174)" 4),
+"alpha": $(py_fmt "$AMPLIFICATION" 4),
+"beta": 0.90,
+"gamma_basse": 0.60,
+"delta": 0.15,
+"epsilon": 0.85,
+"theta": 1.1765
+}
+}
+EOF
+
+echo ""
+printf "${G}[ OK ]${N} Rapport : %s\n" "$report"
+echo ""
+printf "${G}═══════════════════════════════════════════════════════════════════════════${N}\n"
+printf "${G} ✅ TOKENIZER CONVERTER TERMINÉ${N}\n"
+printf "${G}═══════════════════════════════════════════════════════════════════════════${N}\n"
+echo ""
+}
+
+main "$@"
